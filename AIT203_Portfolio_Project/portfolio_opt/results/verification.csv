@@ -1,0 +1,16 @@
+model,check,residual,tolerance,status,detail
+P1,[C1] sum(w) = 1,4.440892098500626e-16,1e-06,PASS,
+P1,[C2] mu'w >= r_target,0.0,1e-06,PASS,
+P1,[C3] w >= 0,0.0,1e-06,PASS,
+P1,KKT stationarity |2Sw - lam*mu + nu*1 - eta|_inf,1.2789219227881367e-13,1e-06,PASS,"lam=0.0500739, nu=-0.0221371"
+P1,"KKT dual feasibility (lam, eta >= 0)",0.0,1e-06,PASS,
+P1,KKT complementary slackness,2.4907921620501917e-11,1e-06,PASS,
+P2,[C1] sum(w) = 1,0.0,1e-06,PASS,
+P2,[C4] mu'w - cost >= r_target,0.0,1e-06,PASS,"net return 0.186436, cost paid 0.001444"
+P2,[C6] l*z <= w,0.0,1e-06,PASS,
+P2,[C6] w <= u*z,0.0,1e-06,PASS,
+P2,[C7] sum(z) <= K,0.0,1e-06,PASS,
+P2,z binary,0.0,1e-06,PASS,
+cross,var*(P1) <= var(equal weight),0.0,1e-06,PASS,P1 0.015736 vs EW 0.029008
+cross,var*(P2) >= var*(P1),0.0,1e-06,PASS,P2 0.016186 vs P1 0.015736
+cross,P2 MIQP optimum = enumeration optimum (rel.),1.876162786273031e-07,1e-06,PASS,"MIQP 0.01618567, enum 0.01618567, 12444 subsets, 13.1s"
