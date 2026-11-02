@@ -36,6 +36,29 @@ def show(fig_key: str, fig, key: str | None = None):
         st.caption(cap)
 
 
+st.markdown("""<style>
+.block-container{max-width:1250px;padding-top:2rem}
+div[data-testid="stMetric"]{background:rgba(120,130,170,.10);border:1px solid rgba(120,130,170,.28);
+  border-radius:14px;padding:.8rem 1rem}
+h2{padding-top:.4rem;border-left:6px solid #5eead4;padding-left:.7rem}
+h1{background:linear-gradient(90deg,#5eead4,#818cf8);-webkit-background-clip:text;
+  -webkit-text-fill-color:transparent}
+div[data-testid="stDataFrame"]{border-radius:12px;overflow:hidden}
+.topnav a{color:inherit}.topnav a:hover{background:#5eead4;color:#06231f}
+</style>""", unsafe_allow_html=True)
+
+
+def table(df: pd.DataFrame, fmt=None, title: str | None = None, note: str | None = None):
+    """Show a calculated-data table with an optional heading and caption."""
+    if title:
+        st.markdown(f"**{title}**")
+    if isinstance(fmt, str):
+        fmt = {c: fmt for c in df.select_dtypes("float").columns}
+    st.dataframe(df.style.format(fmt) if fmt else df, width="stretch")
+    if note:
+        st.caption(note)
+
+
 def pct(x: float, d: int = 2) -> str:
     return f"{x:.{d}%}"
 
@@ -97,8 +120,24 @@ est, tick = R.est, R.est.tickers
 for w in R.warnings:
     st.warning(w)
 
-tabs = st.tabs(["Overview", "Data", "Stock statistics", "Easy problem (P1)", "Hard problem (P2)",
-                "Comparison & impact", "Efficient frontiers", "Backtest", "Verification"])
+SECTIONS = ["Overview", "Data", "Stock statistics", "Easy problem (P1)", "Hard problem (P2)",
+            "Comparison & impact", "Efficient frontiers", "Backtest", "Verification"]
+st.markdown(
+    """<style>html{scroll-behavior:smooth}
+    .topnav{position:sticky;top:2.9rem;z-index:99;background:var(--background-color,#fff);padding:.4rem 0;
+    border-bottom:1px solid #8884;display:flex;gap:.4rem;flex-wrap:wrap}
+    .topnav a{padding:.2rem .7rem;border-radius:99px;border:1px solid #8886;text-decoration:none;font-size:.85rem}
+    .anchor{scroll-margin-top:6.5rem}</style><div class="topnav">"""
+    + "".join(f'<a href="#sec{i}">{n}</a>' for i, n in enumerate(SECTIONS)) + "</div>",
+    unsafe_allow_html=True)
+tabs = []
+for i, n in enumerate(SECTIONS):
+    if i:
+        st.divider()
+    st.markdown(f'<div id="sec{i}" class="anchor"></div>', unsafe_allow_html=True)
+    if i:
+        st.header(n)
+    tabs.append(st.container())
 
 # ------------------------------------------------------------------ 1 overview
 with tabs[0]:
@@ -119,12 +158,23 @@ with tabs[0]:
     st.dataframe(head.style.format({"return_ann": "{:.2%}", "volatility_ann": "{:.2%}",
                                     "sharpe": "{:.2f}", "max_drawdown": "{:.2%}"}))
     st.caption(f"Target return r_target = {pct(R.r_target)}; risk-free rate rf = {R.cfg.rf:.3f}.")
+    i0 = R.impact
+    k1, k2, k3 = st.columns(3)
+    k1.metric("Risk reduction (P1 vs equal weight)", f"{i0['risk_reduction_pct']:.2f}%")
+    if "return_gain" in i0:
+        k2.metric("Return gain at equal risk", pct(i0["return_gain"]))
+    if "delta_vol" in i0:
+        k3.metric("Price of realism (extra vol)", pct(i0["delta_vol"], 3))
+    table(R.weights[[c for c in ("P1 Easy", "P2 Hard") if c in R.weights.columns]]
+          .loc[lambda d: (d > 1e-4).any(axis=1)], "{:.2%}", "Optimal allocation (stocks with non-zero weight)")
 
 # ------------------------------------------------------------------ 2 data
 with tabs[1]:
     st.subheader(f"Dataset shape: {R.info['n_days']} trading days x {R.info['n_stocks']} stocks")
     st.dataframe(R.prices.head(10).style.format("{:.2f}"))
     st.caption("First rows of the adjusted close price table (price corrected for splits and dividends).")
+    table(R.returns.head(10), "{:.4%}", "Daily returns r(t,i) [F1], first rows")
+    table(R.returns.describe().T, "{:.5f}", "Summary of daily returns per stock")
     show("normalized_prices", plots.normalized_prices(R.prices))
     show("return_distributions", plots.return_distributions(R.returns))
     st.subheader("Sectors")
@@ -136,11 +186,18 @@ with tabs[2]:
         "mean_return_ann": "{:.2%}", "volatility_ann": "{:.2%}", "sharpe": "{:.2f}",
         "max_drawdown": "{:.2%}", "best_day": "{:.2%}", "worst_day": "{:.2%}"}))
     st.latex(r"\mu_i=\tfrac1T\sum_t r(t,i)\ \text{[F2]},\quad \mu^{ann}=252\mu\ \text{[F4]}")
+    table(pd.DataFrame({"mu daily [F2]": est.mu_daily, "mu annual [F4]": est.mu,
+                        "variance annual": np.diag(est.sigma), "volatility annual": np.sqrt(np.diag(est.sigma))},
+                       index=tick), {"mu daily [F2]": "{:.5f}", "mu annual [F4]": "{:.2%}",
+                                     "variance annual": "{:.5f}", "volatility annual": "{:.2%}"},
+          "Model inputs fed to the optimiser")
     show("risk_return", plots.risk_return(R.stock_stats))
     st.latex(r"\rho_{ij}=\Sigma_{ij}/(\sigma_i\sigma_j)\ \text{[F5]}")
     show("corr_heatmap", plots.corr_heatmap(stats.correlation(est.sigma), tick))
+    table(pd.DataFrame(stats.correlation(est.sigma), index=tick, columns=tick), "{:.2f}", "Correlation matrix")
     st.latex(r"\Sigma_{ij}=\tfrac1{T-1}\sum_t (r_{ti}-\mu_i)(r_{tj}-\mu_j)\ \text{[F3]}")
     show("cov_heatmap", plots.cov_heatmap(est.sigma, tick))
+    table(pd.DataFrame(est.sigma, index=tick, columns=tick), "{:.5f}", "Annualised covariance matrix")
 
 
 def metrics_panel(name: str):
@@ -177,6 +234,8 @@ with tabs[3]:
     st.latex(r"RC_i=\dfrac{w_i(\Sigma w)_i}{w^\top\Sigma w}\ \text{[M7]}")
     show("risk_contrib_P1", plots.risk_contrib(R.risk_contrib["P1 Easy"].to_numpy(), tick,
                                                 "P1 risk contribution by stock [M7]"), "p1rc")
+    table(pd.DataFrame({"weight": R.p1.w, "risk contribution": R.risk_contrib["P1 Easy"].to_numpy()},
+                       index=tick), "{:.2%}", "Weight vs share of portfolio risk [M7]")
     st.subheader("Verification")
     verification_panel("P1")
 
@@ -205,6 +264,8 @@ with tabs[4]:
         metrics_panel("P2 Hard")
         show("risk_contrib_P2", plots.risk_contrib(R.risk_contrib["P2 Hard"].to_numpy(), tick,
                                                     "P2 risk contribution by stock [M7]"), "p2rc")
+        table(pd.DataFrame({"weight": R.p2.w, "risk contribution": R.risk_contrib["P2 Hard"].to_numpy()},
+                           index=tick), "{:.2%}", "Weight vs share of portfolio risk [M7]")
         st.subheader("Enumeration verification")
         if R.p2_enum is not None and R.p2_enum.status == "optimal":
             rel = abs(R.p2.variance - R.p2_enum.variance) / R.p2_enum.variance
@@ -228,6 +289,8 @@ with tabs[5]:
     st.caption("B1 equal weight, B2 hindsight best single stock, B3 familiar tech names, "
                "B4 global minimum variance, P1 easy optimum, P2 hard optimum. All use annualised inputs.")
     show("weights_grouped", plots.weights_grouped(R.weights))
+    table(R.weights, "{:.2%}", "Weights of every portfolio")
+    table(R.risk_contrib, "{:.2%}", "Risk contribution of every portfolio [M7]")
     i = R.impact
     c1, c2, c3 = st.columns(3)
     c1.metric("Risk reduction, P1 vs equal weight", f"{i['risk_reduction_pct']:.2f}%")
@@ -247,6 +310,11 @@ with tabs[6]:
     else:
         show("frontier", plots.frontier(R))
         show("delta_vol", plots.delta_vol(R.frontier_p2))
+        fa, fb = st.columns(2)
+        with fa:
+            table(R.frontier_p1, "{:.4f}", "P1 frontier points")
+        with fb:
+            table(R.frontier_p2, "{:.4f}", "P2 frontier points")
         st.caption("Targets above P2's maximum achievable return are infeasible and omitted from P2's curve.")
 
 # ------------------------------------------------------------------ 8 backtest
@@ -254,6 +322,8 @@ with tabs[7]:
     st.markdown("**In-sample** (estimated and evaluated on the same data).")
     show("growth", plots.growth(R.wealth))
     show("drawdown", plots.drawdown(R.wealth))
+    table(R.wealth.iloc[::max(1, len(R.wealth) // 12)].tail(13), "{:.3f}",
+          "Growth of 1 unit, sampled through time (in-sample)")
     st.markdown("**Out-of-sample** (mu and Sigma estimated on the training window only).")
     if R.oos is None:
         st.info("Out-of-sample check skipped (see warnings).")
